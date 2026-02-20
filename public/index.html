@@ -1,0 +1,147 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Generador de Discusiones Científicas - Gemini + ASTA</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+    <script src="https://unpkg.com/lucide@latest"></script>
+    
+    <style>
+        .prose h1, .prose h2, .prose h3 { color: #1e293b; font-weight: 600; margin-top: 1.5em; margin-bottom: 0.5em; }
+        .prose p { margin-bottom: 1em; line-height: 1.7; color: #334155; }
+        .prose ul { list-style-type: disc; padding-left: 1.5em; margin-bottom: 1em; }
+        .prose strong { color: #0f172a; }
+        .loader { border: 4px solid #f3f3f3; border-top: 4px solid #8b5cf6; border-radius: 50%; width: 24px; height: 24px; animation: spin 1s linear infinite; }
+        @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+    </style>
+</head>
+<body class="bg-slate-50 text-slate-900 font-sans antialiased min-h-screen p-6">
+    <div class="max-w-4xl mx-auto space-y-6">
+        <header class="border-b border-slate-200 pb-4">
+            <h1 class="text-3xl font-bold flex items-center gap-2">
+                <i data-lucide="microscope" class="w-8 h-8 text-violet-600"></i>
+                Orquestador RAG Científico (ASTA)
+            </h1>
+        </header>
+
+        <main class="bg-white p-6 rounded-xl shadow-sm border border-slate-200 space-y-6">
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div>
+                    <label class="block text-sm font-medium text-slate-700 mb-1">Gemini API Key</label>
+                    <input type="password" id="geminiKey" class="w-full rounded-md border-slate-300 shadow-sm focus:border-violet-500 focus:ring-violet-500 border p-2" placeholder="AIzaSy...">
+                </div>
+                <div>
+                    <label class="block text-sm font-medium text-slate-700 mb-1">ASTA API Key</label>
+                    <input type="password" id="astaKey" class="w-full rounded-md border-slate-300 shadow-sm focus:border-violet-500 focus:ring-violet-500 border p-2" placeholder="dOuy5fDei...">
+                </div>
+            </div>
+
+            <div>
+                <label class="block text-sm font-medium text-slate-700 mb-1">Consulta de Investigación</label>
+                <textarea id="queryInput" rows="3" class="w-full rounded-md border-slate-300 shadow-sm focus:border-violet-500 focus:ring-violet-500 border p-2" placeholder="Describe el tema a investigar en inglés o español..."></textarea>
+            </div>
+
+            <button id="btnGenerate" class="bg-violet-600 hover:bg-violet-700 text-white font-medium py-2 px-4 rounded-md flex items-center gap-2 transition-colors w-full justify-center">
+                <i data-lucide="cpu" class="w-5 h-5"></i> Iniciar Investigación
+            </button>
+
+            <div id="statusContainer" class="hidden flex items-center gap-3 text-sm text-slate-600 bg-slate-50 p-4 rounded-md border border-slate-200">
+                <div class="loader"></div>
+                <span id="statusText">Conectando con el servidor backend...</span>
+            </div>
+
+            <div id="resultContainer" class="hidden opacity-0 translate-y-4 transition-all duration-500 ease-in-out mt-8">
+                <h2 class="text-xl font-bold border-b border-slate-200 pb-2 mb-4">Resultados de Gemini + ASTA</h2>
+                <div id="markdownOutput" class="prose max-w-none"></div>
+            </div>
+        </main>
+    </div>
+
+    <script>
+        lucide.createIcons();
+        
+        const btnGenerate = document.getElementById('btnGenerate');
+        const statusContainer = document.getElementById('statusContainer');
+        const statusText = document.getElementById('statusText');
+        const resultContainer = document.getElementById('resultContainer');
+        const markdownOutput = document.getElementById('markdownOutput');
+
+        function log(type, message) {
+            console[type](`[Frontend] ${message}`);
+        }
+
+        btnGenerate.addEventListener('click', async () => {
+            const query = document.getElementById('queryInput').value.trim();
+            const gemini_key = document.getElementById('geminiKey').value.trim();
+            const asta_key = document.getElementById('astaKey').value.trim();
+
+            if (!query || !gemini_key || !asta_key) {
+                alert('Todos los campos son obligatorios.');
+                return;
+            }
+
+            btnGenerate.disabled = true;
+            btnGenerate.classList.add('opacity-75', 'cursor-wait');
+            btnGenerate.innerHTML = `<i data-lucide="loader-2" class="w-5 h-5 animate-spin"></i> Ejecutando Tool Call...`;
+            
+            statusContainer.classList.remove('hidden');
+            resultContainer.classList.add('hidden');
+            markdownOutput.innerHTML = '';
+            lucide.createIcons();
+
+            try {
+                statusText.textContent = "Delegando conexión MCP al servidor Node.js...";
+                
+                // RUTA RELATIVA: El servidor Node aloja tanto el HTML como la API
+                const response = await fetch('/api/research', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ query, gemini_key, asta_key })
+                });
+
+                if (!response.ok) {
+                    const errorData = await response.json().catch(() => ({}));
+                    throw new Error(errorData.error || `Error del servidor HTTP ${response.status}`);
+                }
+
+                const data = await response.json();
+                
+                markdownOutput.innerHTML = marked.parse(data.markdown);
+                resultContainer.classList.remove('hidden');
+                
+                setTimeout(() => {
+                    resultContainer.classList.remove('opacity-0', 'translate-y-4');
+                }, 50);
+
+            } catch (error) {
+                console.error(error);
+                log('error', `El proceso falló: ${error.message}`);
+                
+                markdownOutput.innerHTML = `
+                    <div class="bg-red-50 border-l-4 border-red-500 p-4 rounded-md">
+                        <div class="flex items-center">
+                            <div class="flex-shrink-0"><i data-lucide="alert-triangle" class="h-5 w-5 text-red-500"></i></div>
+                            <div class="ml-3">
+                                <h3 class="text-sm font-medium text-red-800">Error en la capa de red o MCP</h3>
+                                <p class="text-sm text-red-700 mt-1">${error.message}</p>
+                                <p class="text-xs text-red-600 mt-2 font-mono">Revisa los logs de despliegue en Render.com para trazar el fallo.</p>
+                            </div>
+                        </div>
+                    </div>
+                `;
+                resultContainer.classList.remove('hidden', 'opacity-0', 'translate-y-4');
+                lucide.createIcons();
+                
+            } finally {
+                btnGenerate.disabled = false;
+                btnGenerate.classList.remove('opacity-75', 'cursor-wait');
+                btnGenerate.innerHTML = `<i data-lucide="cpu" class="w-5 h-5"></i> Iniciar Investigación`;
+                statusContainer.classList.add('hidden');
+                lucide.createIcons();
+            }
+        });
+    </script>
+</body>
+</html>
